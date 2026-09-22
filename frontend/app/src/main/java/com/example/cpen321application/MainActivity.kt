@@ -1,11 +1,13 @@
 package com.example.cpen321application
 
+import android.media.MediaPlayer
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,10 +32,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import com.example.cpen321application.ui.theme.CPEN321ApplicationTheme
 import java.net.HttpURLConnection
 import java.net.URL
@@ -127,6 +132,15 @@ private fun TimerScreen(
     var remainingSeconds by rememberSaveable { mutableStateOf(0) }
     var isRunning by rememberSaveable { mutableStateOf(false) }
     var hasStarted by rememberSaveable { mutableStateOf(false) }
+    var surpriseVisible by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            mediaPlayer?.release()
+        }
+    }
 
     LaunchedEffect(isRunning) {
         while (isRunning && remainingSeconds > 0) {
@@ -134,7 +148,16 @@ private fun TimerScreen(
             remainingSeconds -= 1
             if (remainingSeconds == 0) {
                 isRunning = false
+                surpriseVisible = true
             }
+        }
+    }
+
+    LaunchedEffect(surpriseVisible) {
+        if (surpriseVisible) {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer.create(context, R.raw.xbc_kazoo)
+            mediaPlayer?.start()
         }
     }
 
@@ -194,6 +217,7 @@ private fun TimerScreen(
                 onClick = {
                     if (remainingSeconds == 0 || !hasStarted) {
                         remainingSeconds = timerInputSeconds(minutesText, secondsText)
+                        surpriseVisible = false
                     }
                     if (remainingSeconds > 0) {
                         hasStarted = true
@@ -214,13 +238,27 @@ private fun TimerScreen(
                 isRunning = false
                 hasStarted = false
                 remainingSeconds = 0
+                surpriseVisible = false
+                mediaPlayer?.stop()
+                mediaPlayer?.release()
+                mediaPlayer = null
             }) {
                 Text("Reset")
             }
         }
 
         if (hasStarted && !isRunning && remainingSeconds == 0) {
-            Text("Timer finished")
+            if (surpriseVisible) {
+                Text("Surprise!")
+                Image(
+                    painter = painterResource(R.drawable.lebron_sunshine),
+                    contentDescription = "LeBron James smiling in sunshine",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().weight(1f)
+                )
+            } else {
+                Text("Timer finished")
+            }
         }
     }
 }
