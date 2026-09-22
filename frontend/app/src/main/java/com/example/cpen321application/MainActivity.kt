@@ -2,8 +2,11 @@ package com.example.cpen321application
 
 import android.media.MediaPlayer
 import android.os.Bundle
+import android.app.Activity
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -39,9 +43,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.example.cpen321application.ui.theme.CPEN321ApplicationTheme
+import java.text.SimpleDateFormat
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,6 +71,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     var showLiveUpdates by remember { mutableStateOf(false) }
                     var showTimer by remember { mutableStateOf(false) }
+                    var showLogin by remember { mutableStateOf(false) }
                     if (showLiveUpdates) {
                         LivePixelScreen(
                             apiBaseUrl = BuildConfig.API_BASE_URL,
@@ -72,9 +83,17 @@ class MainActivity : ComponentActivity() {
                             onBack = { showTimer = false },
                             modifier = Modifier.padding(innerPadding)
                         )
+                    } else if (showLogin) {
+                        LoginScreen(
+                            apiBaseUrl = BuildConfig.API_BASE_URL,
+                            googleClientId = BuildConfig.GOOGLE_CLIENT_ID,
+                            onBack = { showLogin = false },
+                            modifier = Modifier.padding(innerPadding)
+                        )
                     } else {
                         HomeScreen(
                             apiBaseUrl = BuildConfig.API_BASE_URL,
+                            onOpenLogin = { showLogin = true },
                             onOpenLiveUpdates = { showLiveUpdates = true },
                             onOpenTimer = { showTimer = true },
                             modifier = Modifier.padding(innerPadding)
@@ -89,6 +108,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun HomeScreen(
     apiBaseUrl: String,
+    onOpenLogin: () -> Unit,
     onOpenLiveUpdates: () -> Unit,
     onOpenTimer: () -> Unit,
     modifier: Modifier = Modifier
@@ -99,11 +119,113 @@ private fun HomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Greeting(apiBaseUrl = apiBaseUrl)
+        Button(onClick = onOpenLogin) {
+            Text("Button 1: Login")
+        }
         Button(onClick = onOpenLiveUpdates) {
             Text("Button 2: Live Updates")
         }
         Button(onClick = onOpenTimer) {
             Text("Button 3: Timer")
+        }
+    }
+}
+
+private data class LoginInfo(
+    val serverIp: String,
+    val clientIp: String,
+    val serverTime: String,
+    val clientTime: String,
+    val ownerName: String,
+    val userName: String
+)
+
+@Composable
+private fun LoginScreen(
+    apiBaseUrl: String,
+    googleClientId: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var account by remember { mutableStateOf<GoogleSignInAccount?>(null) }
+    var loginInfo by remember { mutableStateOf<LoginInfo?>(null) }
+    var status by remember { mutableStateOf("Sign in to view connection details") }
+
+    val signInLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) {
+            status = "Sign-in cancelled"
+            return@rememberLauncherForActivityResult
+        }
+
+        val signedInAccount = try {
+            GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                .getResult(Exception::class.java)
+        } catch (_: Exception) {
+            status = "Google sign-in failed"
+            return@rememberLauncherForActivityResult
+        }
+        account = signedInAccount
+        status = "Loading connection details..."
+        scope.launch {
+            loginInfo = fetchLoginInfo(apiBaseUrl, signedInAccount)
+            status = if (loginInfo == null) {
+                "Signed in, but the backend could not be reached"
+            } else {
+                "Authenticated"
+            }
+        }
+    }
+
+    fun beginSignIn() {
+        if (googleClientId.isBlank()) {
+            status = "Google sign-in is not configured. Set GOOGLE_CLIENT_ID in local.properties."
+            return
+        }
+        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(googleClientId)
+            .requestEmail()
+            .build()
+        signInLauncher.launch(GoogleSignIn.getClient(context, options).signInIntent)
+    }
+
+    Column(
+        modifier = modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = onBack) { Text("Back") }
+            Spacer(Modifier.weight(1f))
+            Text("Button 1")
+        }
+        Text("Login and connection details")
+        Button(onClick = ::beginSignIn) {
+            Text(if (account == null) "Sign in with Google" else "Sign in again")
+        }
+        Text(status)
+        loginInfo?.let { info ->
+            ConnectionDetails(info)
+        }
+    }
+}
+
+@Composable
+private fun ConnectionDetails(info: LoginInfo) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Connection details")
+            Text("Server IP: ${info.serverIp}")
+            Text("Client IP: ${info.clientIp}")
+            Text("Server local time: ${info.serverTime}")
+            Text("Client local time: ${info.clientTime}")
+            Text("Your name: ${info.ownerName}")
+            Text("Logged-in user: ${info.userName}")
         }
     }
 }
@@ -268,6 +390,49 @@ private fun timerInputSeconds(minutesText: String, secondsText: String): Int {
     val seconds = secondsText.toIntOrNull() ?: 0
     return (minutes * 60 + seconds.coerceIn(0, 59)).coerceAtLeast(0)
 }
+
+private suspend fun fetchLoginInfo(
+    apiBaseUrl: String,
+    account: GoogleSignInAccount
+): LoginInfo? = withContext(Dispatchers.IO) {
+    try {
+        val client = OkHttpClient()
+        val baseUrl = apiBaseUrl.trimEnd('/')
+        val token = account.idToken
+
+        fun getJson(path: String): JSONObject? {
+            val requestBuilder = Request.Builder().url("$baseUrl$path")
+            if (!token.isNullOrBlank()) {
+                requestBuilder.header("Authorization", "Bearer $token")
+            }
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                if (!response.isSuccessful) return null
+                return response.body?.string()?.let(::JSONObject)
+            }
+        }
+
+        val serverIp = getJson("/api/server-ip")?.getString("serverIp") ?: return@withContext null
+        val serverTime = getJson("/api/server-time")?.getString("serverTime") ?: return@withContext null
+        val owner = getJson("/api/owner") ?: return@withContext null
+        val clientIp = getJson("/api/client-ip")?.getString("clientIp") ?: return@withContext null
+        val firstName = account.givenName ?: "Unknown"
+        val lastName = account.familyName ?: "User"
+
+        LoginInfo(
+            serverIp = serverIp,
+            clientIp = clientIp,
+            serverTime = serverTime,
+            clientTime = currentClientTime(),
+            ownerName = "${owner.getString("firstName")} ${owner.getString("lastName")}",
+            userName = "$firstName $lastName"
+        )
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun currentClientTime(): String =
+    SimpleDateFormat("HH:mm:ss 'GMT'XXX", Locale.US).format(Date())
 
 private fun formatTimer(totalSeconds: Int): String {
     val minutes = totalSeconds / 60

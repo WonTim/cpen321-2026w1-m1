@@ -12,4 +12,7 @@ if (Number.isNaN(port) || port < 1 || port > 65535) {
 
 export const env = {
   port,
+  serverPublicIp: process.env.SERVER_PUBLIC_IP ?? 'Unconfigured',
+  ownerFirstName: process.env.OWNER_FIRST_NAME ?? 'Unconfigured',
+  ownerLastName: process.env.OWNER_LAST_NAME ?? 'Unconfigured',
 } as const;
