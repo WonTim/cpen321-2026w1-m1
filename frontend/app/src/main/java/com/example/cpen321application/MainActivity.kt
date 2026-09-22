@@ -185,7 +185,7 @@ private fun LoginScreen(
 
     fun beginSignIn() {
         if (googleClientId.isBlank()) {
-            status = "Google sign-in is not configured. Set GOOGLE_CLIENT_ID in local.properties."
+            status = "Google sign-in is not configured. Set the Web application client ID in local.properties."
             return
         }
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
