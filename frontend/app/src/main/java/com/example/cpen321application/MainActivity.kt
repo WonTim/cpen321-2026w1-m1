@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
@@ -34,7 +33,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.example.cpen321application.ui.theme.CPEN321ApplicationTheme
-import java.net.URI
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
@@ -122,7 +120,7 @@ private fun LivePixelScreen(
     val scope = rememberCoroutineScope()
 
     DisposableEffect(socketUrl) {
-        val socket = PixelSocketClient(
+        val socketClient = PixelSocketClient(
             url = "$socketUrl/ws/pixels",
             onStatus = { status -> scope.launch { connectionText = status } },
             onPixel = { x, y, color ->
@@ -130,10 +128,12 @@ private fun LivePixelScreen(
                     cells[y * 16 + x] = color
                 }
             }
-        ).connect()
+        )
+        val socket = socketClient.connect()
 
         onDispose {
-            socket.close(1000, "Screen closed")
+            socket?.close(1000, "Screen closed")
+            socketClient.shutdown()
         }
     }
 
@@ -182,31 +182,41 @@ private class PixelSocketClient(
     private val client = OkHttpClient()
     private var socket: WebSocket? = null
 
-    fun connect(): WebSocket {
-        val request = Request.Builder().url(URI(url).toURL()).build()
-        socket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                onStatus("Connected")
-            }
-
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                try {
-                    val update = JSONObject(text)
-                    val x = update.getInt("x")
-                    val y = update.getInt("y")
-                    if (x in 0 until 16 && y in 0 until 16) {
-                        onPixel(x, y, Color(android.graphics.Color.parseColor(update.getString("color"))))
-                    }
-                } catch (_: Exception) {
-                    onStatus("Invalid pixel update")
+    fun connect(): WebSocket? {
+        return try {
+            val request = Request.Builder().url(url).build()
+            socket = client.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    onStatus("Connected")
                 }
-            }
 
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                onStatus("Connection failed")
-            }
-        })
-        return socket ?: error("WebSocket was not created")
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    try {
+                        val update = JSONObject(text)
+                        val x = update.getInt("x")
+                        val y = update.getInt("y")
+                        if (x in 0 until 16 && y in 0 until 16) {
+                            onPixel(x, y, Color(android.graphics.Color.parseColor(update.getString("color"))))
+                        }
+                    } catch (_: Exception) {
+                        onStatus("Invalid pixel update")
+                    }
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    onStatus("Connection failed")
+                }
+            })
+            socket
+        } catch (_: Exception) {
+            onStatus("Invalid WebSocket URL")
+            null
+        }
+    }
+
+    fun shutdown() {
+        socket?.cancel()
+        client.dispatcher.executorService.shutdown()
     }
 }
 
@@ -214,7 +224,7 @@ private fun toWebSocketUrl(apiBaseUrl: String): String = when {
     apiBaseUrl.startsWith("https://") -> apiBaseUrl.replaceFirst("https://", "wss://")
     apiBaseUrl.startsWith("http://") -> apiBaseUrl.replaceFirst("http://", "ws://")
     else -> apiBaseUrl
-}
+}.trimEnd('/')
 
 private suspend fun fetchHealthStatus(apiBaseUrl: String): String = withContext(Dispatchers.IO) {
     val healthUrl = "${apiBaseUrl.trimEnd('/')}/health"
