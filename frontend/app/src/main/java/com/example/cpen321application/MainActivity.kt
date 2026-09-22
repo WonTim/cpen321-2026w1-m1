@@ -2,7 +2,6 @@ package com.example.cpen321application
 
 import android.media.MediaPlayer
 import android.os.Bundle
-import android.app.Activity
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -46,6 +45,7 @@ import androidx.compose.ui.res.painterResource
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import com.example.cpen321application.ui.theme.CPEN321ApplicationTheme
 import java.text.SimpleDateFormat
 import java.net.HttpURLConnection
@@ -156,14 +156,17 @@ private fun LoginScreen(
     val signInLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode != Activity.RESULT_OK) {
-            status = "Sign-in cancelled"
-            return@rememberLauncherForActivityResult
-        }
-
         val signedInAccount = try {
             GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 .getResult(Exception::class.java)
+        } catch (exception: ApiException) {
+            status = when (exception.statusCode) {
+                12501 -> "Sign-in cancelled"
+                10 -> "Google sign-in configuration error (check client ID and SHA-1)"
+                7 -> "Google sign-in network error"
+                else -> "Google sign-in failed (${exception.statusCode})"
+            }
+            return@rememberLauncherForActivityResult
         } catch (_: Exception) {
             status = "Google sign-in failed"
             return@rememberLauncherForActivityResult
