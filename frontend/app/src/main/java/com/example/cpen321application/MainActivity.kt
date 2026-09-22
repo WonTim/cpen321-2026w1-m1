@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +26,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,16 +55,23 @@ class MainActivity : ComponentActivity() {
             CPEN321ApplicationTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     var showLiveUpdates by remember { mutableStateOf(false) }
+                    var showTimer by remember { mutableStateOf(false) }
                     if (showLiveUpdates) {
                         LivePixelScreen(
                             apiBaseUrl = BuildConfig.API_BASE_URL,
                             onBack = { showLiveUpdates = false },
                             modifier = Modifier.padding(innerPadding)
                         )
+                    } else if (showTimer) {
+                        TimerScreen(
+                            onBack = { showTimer = false },
+                            modifier = Modifier.padding(innerPadding)
+                        )
                     } else {
                         HomeScreen(
                             apiBaseUrl = BuildConfig.API_BASE_URL,
                             onOpenLiveUpdates = { showLiveUpdates = true },
+                            onOpenTimer = { showTimer = true },
                             modifier = Modifier.padding(innerPadding)
                         )
                     }
@@ -76,6 +85,7 @@ class MainActivity : ComponentActivity() {
 private fun HomeScreen(
     apiBaseUrl: String,
     onOpenLiveUpdates: () -> Unit,
+    onOpenTimer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -86,6 +96,9 @@ private fun HomeScreen(
         Greeting(apiBaseUrl = apiBaseUrl)
         Button(onClick = onOpenLiveUpdates) {
             Text("Button 2: Live Updates")
+        }
+        Button(onClick = onOpenTimer) {
+            Text("Button 3: Timer")
         }
     }
 }
@@ -102,6 +115,126 @@ fun Greeting(apiBaseUrl: String, modifier: Modifier = Modifier) {
         text = statusText,
         modifier = modifier
     )
+}
+
+@Composable
+private fun TimerScreen(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var minutesText by rememberSaveable { mutableStateOf("0") }
+    var secondsText by rememberSaveable { mutableStateOf("0") }
+    var remainingSeconds by rememberSaveable { mutableStateOf(0) }
+    var isRunning by rememberSaveable { mutableStateOf(false) }
+    var hasStarted by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(isRunning) {
+        while (isRunning && remainingSeconds > 0) {
+            kotlinx.coroutines.delay(1_000)
+            remainingSeconds -= 1
+            if (remainingSeconds == 0) {
+                isRunning = false
+            }
+        }
+    }
+
+    val displayedSeconds = if (hasStarted) remainingSeconds else {
+        timerInputSeconds(minutesText, secondsText)
+    }
+
+    Column(
+        modifier = modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = onBack) { Text("Back") }
+            Spacer(Modifier.weight(1f))
+            Text("Button 3")
+        }
+
+        Text("Set a timer")
+        Text(
+            text = formatTimer(displayedSeconds),
+            modifier = Modifier.padding(vertical = 20.dp)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedTextField(
+                value = minutesText,
+                onValueChange = { value ->
+                    if (!isRunning && value.all(Char::isDigit) && value.length <= 3) {
+                        minutesText = value
+                        hasStarted = false
+                    }
+                },
+                label = { Text("Minutes") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = secondsText,
+                onValueChange = { value ->
+                    if (!isRunning && value.all(Char::isDigit) && value.length <= 2) {
+                        secondsText = value
+                        hasStarted = false
+                    }
+                },
+                label = { Text("Seconds") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+                onClick = {
+                    if (remainingSeconds == 0 || !hasStarted) {
+                        remainingSeconds = timerInputSeconds(minutesText, secondsText)
+                    }
+                    if (remainingSeconds > 0) {
+                        hasStarted = true
+                        isRunning = true
+                    }
+                },
+                enabled = !isRunning
+            ) {
+                Text(if (hasStarted) "Resume" else "Start")
+            }
+            Button(
+                onClick = { isRunning = false },
+                enabled = isRunning
+            ) {
+                Text("Pause")
+            }
+            Button(onClick = {
+                isRunning = false
+                hasStarted = false
+                remainingSeconds = 0
+            }) {
+                Text("Reset")
+            }
+        }
+
+        if (hasStarted && !isRunning && remainingSeconds == 0) {
+            Text("Timer finished")
+        }
+    }
+}
+
+private fun timerInputSeconds(minutesText: String, secondsText: String): Int {
+    val minutes = minutesText.toIntOrNull() ?: 0
+    val seconds = secondsText.toIntOrNull() ?: 0
+    return (minutes * 60 + seconds.coerceIn(0, 59)).coerceAtLeast(0)
+}
+
+private fun formatTimer(totalSeconds: Int): String {
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%02d:%02d".format(minutes, seconds)
 }
 
 @Composable
